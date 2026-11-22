@@ -11,6 +11,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const HISTORY_SECONDS = 300;
+const HIGH_LOAD_DELAY_SECONDS = 10;
 const GRAPH_WIDTH = 310;
 const GRAPH_HEIGHT = 78;
 const gettextDomain = Gettext.domain('system-monitor');
@@ -48,9 +49,10 @@ function addProcessRow(box) {
 
 const GraphArea = GObject.registerClass(
 class GraphArea extends St.DrawingArea {
-    _init(color) {
+    _init(color, network = false) {
         super._init({ style_class: 'system-monitor-graph' });
         this._color = color;
+        this._network = network;
         this._samples = [];
         this.set_size(GRAPH_WIDTH, GRAPH_HEIGHT);
         this.connect('repaint', () => this._draw());
@@ -74,9 +76,17 @@ class GraphArea extends St.DrawingArea {
         const plotWidth = right - left;
         const plotHeight = bottom - top;
         cr.setLineWidth(1);
-        for (const percent of [0, 50, 100]) {
-            const y = bottom - (percent / 100) * plotHeight;
-            cr.setSourceRGBA(1, 1, 1, percent === 0 ? 0.17 : 0.075);
+        const points = this._samples.filter(sample => sample.time >=
+            GLib.get_monotonic_time() / 1_000_000 - HISTORY_SECONDS);
+        let maximum = 100;
+        if (this._network) {
+            const peak = Math.max(0, ...points.flatMap(sample => [sample.rx, sample.tx]));
+            maximum = Math.max(1024 * 1024, Math.ceil(peak / (1024 * 1024) * 2) / 2 * 1024 * 1024);
+        }
+        const gridValues = this._network ? [0, maximum / 2, maximum] : [0, 50, 100];
+        for (const value of gridValues) {
+            const y = bottom - (value / maximum) * plotHeight;
+            cr.setSourceRGBA(1, 1, 1, value === 0 ? 0.17 : 0.075);
             cr.moveTo(left, y + 0.5);
             cr.lineTo(right, y + 0.5);
             cr.stroke();
@@ -84,21 +94,24 @@ class GraphArea extends St.DrawingArea {
         cr.setSourceRGBA(1, 1, 1, 0.32);
         cr.selectFontFace('Cantarell', Cairo.FontSlant.NORMAL, Cairo.FontWeight.NORMAL);
         cr.setFontSize(9);
+        const axisLabels = this._network
+            ? [this._formatRate(maximum), this._formatRate(maximum / 2), this._formatRate(0)]
+            : ['100', '50', '0'];
         cr.moveTo(1, top + 4);
-        cr.showText('100');
-        cr.moveTo(8, top + plotHeight / 2 + 3);
-        cr.showText('50');
+        cr.showText(axisLabels[0]);
+        cr.moveTo(1, top + plotHeight / 2 + 3);
+        cr.showText(axisLabels[1]);
         cr.moveTo(15, bottom + 3);
-        cr.showText('0');
+        cr.showText(axisLabels[2]);
         const now = GLib.get_monotonic_time() / 1_000_000;
         const start = now - HISTORY_SECONDS;
-        const points = this._samples.filter(sample => sample.time >= start);
         if (points.length > 0) {
-            const [red, green, blue] = this._color;
-            const coords = points.map(sample => ({
-                x: left + Math.max(0, Math.min(1, (sample.time - start) / HISTORY_SECONDS)) * plotWidth,
-                y: bottom - (Math.max(0, Math.min(100, sample.value)) / 100) * plotHeight,
-            }));
+            const drawSeries = (key, color) => {
+                const [red, green, blue] = color;
+                const coords = points.map(sample => ({
+                    x: left + Math.max(0, Math.min(1, (sample.time - start) / HISTORY_SECONDS)) * plotWidth,
+                    y: bottom - (Math.max(0, sample[key]) / maximum) * plotHeight,
+                }));
             const first = coords[0];
             const last = points[points.length - 1];
             const lastX = left + Math.max(0, Math.min(1, (last.time - start) / HISTORY_SECONDS)) * plotWidth;
@@ -133,8 +146,23 @@ class GraphArea extends St.DrawingArea {
             const current = coords[coords.length - 1];
             cr.arc(current.x, current.y, 2.2, 0, Math.PI * 2);
             cr.fill();
+            };
+            if (this._network) {
+                drawSeries('rx', [0.38, 0.72, 1.0]);
+                drawSeries('tx', [0.62, 0.82, 0.45]);
+            } else {
+                drawSeries('value', this._color);
+            }
         }
         cr.$dispose();
+    }
+
+    _formatRate(bytesPerSecond) {
+        if (bytesPerSecond >= 1024 * 1024)
+            return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)}M`;
+        if (bytesPerSecond >= 1024)
+            return `${(bytesPerSecond / 1024).toFixed(0)}K`;
+        return `${bytesPerSecond.toFixed(0)}B`;
     }
 });
 
@@ -147,9 +175,15 @@ class MonitorIndicator extends PanelMenu.Button {
         this._interval = 1;
         this._lastCpu = this._readCpu();
         this._lastProcesses = new Map();
-        this._history = { cpu: [], memory: [] };
+        this._history = { cpu: [], memory: [], network: [] };
+        this._lastNetwork = this._readNetwork();
+        this._lastNetworkTime = GLib.get_monotonic_time() / 1_000_000;
         this._menuRows = [];
-        this._warningLevels = { cpu: null, memory: null };
+        this._warningStates = {
+            cpu: { level: 0, since: null, notifiedLevel: 0, process: null },
+            memory: { level: 0, since: null, notifiedLevel: 0, process: null },
+            network: { level: 0, since: null, notifiedLevel: 0, process: null },
+        };
 
         this._label = new St.Label({
             text: 'CPU --%  RAM --%',
@@ -158,20 +192,6 @@ class MonitorIndicator extends PanelMenu.Button {
         });
         this.add_child(this._label);
         this._buildMenu();
-        this._buildContextMenu();
-        this.remove_action(this._clickGesture);
-        this._clickGesture = new Clutter.ClickGesture({
-            required_button: Clutter.BUTTON_PRIMARY,
-            recognize_on_press: true,
-        });
-        this._clickGesture.connect('recognize', () => this.menu.toggle());
-        this.add_action(this._clickGesture);
-        this._rightClickGesture = new Clutter.ClickGesture({
-            required_button: Clutter.BUTTON_SECONDARY,
-            recognize_on_press: true,
-        });
-        this._rightClickGesture.connect('recognize', () => this._contextMenu.toggle());
-        this.add_action(this._rightClickGesture);
         this._refresh();
         this._startTimer();
     }
@@ -182,6 +202,12 @@ class MonitorIndicator extends PanelMenu.Button {
         this._contextMenuManager.addMenu(this._contextMenu);
 
         this._populateActionsMenu(this._contextMenu);
+        this._buttonPressId = this.connect('button-press-event', (_actor, event) => {
+            if (event.get_button() !== Clutter.BUTTON_SECONDARY)
+                return Clutter.EVENT_PROPAGATE;
+            this._contextMenu.toggle();
+            return Clutter.EVENT_STOP;
+        });
     }
 
     _populateActionsMenu(menu) {
@@ -243,6 +269,17 @@ class MonitorIndicator extends PanelMenu.Button {
         addLabel(memoryAxis, _('5 min ago'), 'system-monitor-time-label');
         addLabel(memoryAxis, _('Now'), 'system-monitor-time-label');
         graphBox.add_child(memoryAxis);
+
+        const networkHeading = new St.BoxLayout({ style_class: 'system-monitor-heading' });
+        addLabel(networkHeading, _('Network'), 'system-monitor-title');
+        this._networkValue = addLabel(networkHeading, '--', 'system-monitor-value');
+        graphBox.add_child(networkHeading);
+        this._networkGraph = new GraphArea([0.38, 0.72, 1.0], true);
+        graphBox.add_child(this._networkGraph);
+        const networkAxis = new St.BoxLayout({ style_class: 'system-monitor-time-axis' });
+        addLabel(networkAxis, _('5 min ago'), 'system-monitor-time-label');
+        addLabel(networkAxis, _('Now'), 'system-monitor-time-label');
+        graphBox.add_child(networkAxis);
         graphs.add_child(graphBox);
         this.menu.addMenuItem(graphs);
 
@@ -287,6 +324,77 @@ class MonitorIndicator extends PanelMenu.Button {
         if (!total || !Number.isFinite(available))
             return null;
         return { percent: Math.round((total - available) * 100 / total), total, available };
+    }
+
+    _readNetwork() {
+        const lines = readText('/proc/net/dev')?.split('\n').slice(2) ?? [];
+        let rx = 0;
+        let tx = 0;
+        let rxCapacity = 0;
+        let txCapacity = 0;
+        const interfaces = {};
+        for (const line of lines) {
+            const [interfaceName, counters] = line.trim().split(':');
+            const name = interfaceName?.trim();
+            if (!counters || !name || name === 'lo' ||
+                !Gio.File.new_for_path(`/sys/class/net/${name}/device`).query_exists(null))
+                continue;
+            const values = counters.trim().split(/\s+/).map(Number);
+            if (values.length < 9 || values.some(value => !Number.isFinite(value)))
+                continue;
+
+            const capacity = this._readInterfaceCapacity(name);
+            interfaces[name] = {
+                rx: values[0],
+                tx: values[8],
+                rxCapacity: capacity.rx,
+                txCapacity: capacity.tx,
+            };
+            rx += values[0];
+            tx += values[8];
+            rxCapacity += capacity.rx;
+            txCapacity += capacity.tx;
+        }
+        return { rx, tx, rxCapacity, txCapacity, interfaces };
+    }
+
+    _readInterfaceCapacity(name) {
+        const speedMbps = Number(readText(`/sys/class/net/${name}/speed`));
+        if (Number.isFinite(speedMbps) && speedMbps > 0) {
+            const bytesPerSecond = speedMbps * 1_000_000 / 8;
+            return { rx: bytesPerSecond, tx: bytesPerSecond };
+        }
+
+        // Wireless interfaces usually expose their negotiated receive and
+        // transmit bitrates through iw rather than the sysfs speed attribute.
+        if (!Gio.File.new_for_path(`/sys/class/net/${name}/wireless`).query_exists(null))
+            return { rx: 0, tx: 0 };
+        try {
+            const [ok, output] = GLib.spawn_sync(null, ['iw', 'dev', name, 'link'],
+                null, GLib.SpawnFlags.SEARCH_PATH, null);
+            if (!ok)
+                return { rx: 0, tx: 0 };
+            const text = new TextDecoder().decode(output);
+            const toBytesPerSecond = (direction) => {
+                const match = text.match(new RegExp(`${direction} bitrate:\\s+([\\d.]+)\\s+(KBit/s|MBit/s|Gbit/s)`, 'i'));
+                if (!match)
+                    return 0;
+                const multiplier = match[2].toLowerCase() === 'kbit/s' ? 1_000
+                    : match[2].toLowerCase() === 'mbit/s' ? 1_000_000 : 1_000_000_000;
+                return Number(match[1]) * multiplier / 8;
+            };
+            return { rx: toBytesPerSecond('rx'), tx: toBytesPerSecond('tx') };
+        } catch {
+            return { rx: 0, tx: 0 };
+        }
+    }
+
+    _formatNetworkRate(bytesPerSecond) {
+        if (bytesPerSecond >= 1024 * 1024)
+            return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+        if (bytesPerSecond >= 1024)
+            return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+        return `${bytesPerSecond.toFixed(0)} B/s`;
     }
 
     _readProcesses(systemCpu) {
@@ -380,6 +488,21 @@ class MonitorIndicator extends PanelMenu.Button {
     _notifyThreshold(kind, level, percent, process) {
         const name = process?.command ?? _('unknown process');
         const cpu = kind === 'cpu';
+        if (kind === 'network') {
+            const direction = process?.direction === 'rx' ? _('download') : _('upload');
+            const title = _('High network usage');
+            const message = level === 100
+                ? _('Network usage reached 100% of link capacity on %s (%s: %s).')
+                    .replace('%s', name).replace('%s', direction).replace('%s', process?.rate ?? '0')
+                : _('Network usage is above %d%% of link capacity on %s (%s: %s).')
+                    .replace('%d', level).replace('%s', name).replace('%s', direction)
+                    .replace('%s', process?.rate ?? '0');
+            Main.notify(title, message);
+            return;
+        }
+        const processValue = cpu
+            ? (process?.cpu ?? 0).toFixed(1)
+            : ((process?.memory ?? 0) / 1048576).toFixed(0);
         const title = cpu ? _('High CPU usage') : _('High memory usage');
         const body = level === 100
             ? (cpu ? _('CPU usage reached 100%. Top process: %s (%s%%).')
@@ -387,18 +510,40 @@ class MonitorIndicator extends PanelMenu.Button {
             : (cpu ? _('CPU usage is above %d%%. Top process: %s (%s%%).')
                 : _('Memory usage is above %d%%. Largest process: %s (%s MB).'));
         const message = level === 100
-            ? body.replace('%s', name).replace('%s', process?.value ?? '0')
-            : body.replace('%d', level).replace('%s', name).replace('%s', process?.value ?? '0');
+            ? body.replace('%s', name).replace('%s', processValue)
+            : body.replace('%d', level).replace('%s', name).replace('%s', processValue);
         Main.notify(title, message);
     }
 
-    _checkThreshold(kind, percent, process) {
+    _checkThreshold(kind, percent, process, now) {
         const nextLevel = this._warningLevel(percent);
-        const previousLevel = this._warningLevels[kind];
-        this._warningLevels[kind] = nextLevel;
-        if (previousLevel === null || nextLevel <= previousLevel)
+        const state = this._warningStates[kind];
+        if (nextLevel === 0) {
+            state.level = 0;
+            state.since = null;
+            state.notifiedLevel = 0;
+            state.process = null;
             return;
-        this._notifyThreshold(kind, nextLevel, percent, process);
+        }
+
+        if (state.since === null) {
+            state.since = now;
+            state.process = process;
+        } else if (process) {
+            const metric = kind === 'cpu' ? process.cpu
+                : kind === 'memory' ? process.memory : process.percent;
+            const previousMetric = kind === 'cpu' ? state.process?.cpu
+                : kind === 'memory' ? state.process?.memory : state.process?.percent;
+            if (!state.process || metric > previousMetric)
+                state.process = process;
+        }
+        state.level = nextLevel;
+
+        if (now - state.since < HIGH_LOAD_DELAY_SECONDS || nextLevel <= state.notifiedLevel)
+            return;
+
+        this._notifyThreshold(kind, nextLevel, percent, state.process);
+        state.notifiedLevel = nextLevel;
     }
 
     _refresh() {
@@ -416,16 +561,53 @@ class MonitorIndicator extends PanelMenu.Button {
         this._memory = this._readMemory();
         const memoryPercent = this._memory?.percent ?? null;
         const processes = this._readProcesses({ delta: totalDelta });
-        this._checkThreshold('cpu', cpuPercent,
-            processes.byCpu[0] ? {...processes.byCpu[0], value: processes.byCpu[0].cpu.toFixed(1)} : null);
-        this._checkThreshold('memory', memoryPercent,
-            processes.byMemory[0] ? {...processes.byMemory[0], value: (processes.byMemory[0].memory / 1048576).toFixed(0)} : null);
+        this._checkThreshold('cpu', cpuPercent, processes.byCpu[0] ?? null, now);
+        this._checkThreshold('memory', memoryPercent, processes.byMemory[0] ?? null, now);
         this._label.text = `CPU ${cpuPercent ?? '--'}%  RAM ${memoryPercent ?? '--'}%`;
         this.accessible_name = _('CPU %s percent, memory %s percent')
             .replace('%s', cpuPercent ?? _('unknown'))
             .replace('%s', memoryPercent ?? _('unknown'));
         this._cpuValue.text = `${cpuPercent ?? '--'}%`;
         this._memoryValue.text = `${memoryPercent ?? '--'}%`;
+        const networkNow = this._readNetwork();
+        const elapsed = now - this._lastNetworkTime;
+        const rxRate = elapsed > 0 && networkNow.rx >= this._lastNetwork.rx
+            ? (networkNow.rx - this._lastNetwork.rx) / elapsed : 0;
+        const txRate = elapsed > 0 && networkNow.tx >= this._lastNetwork.tx
+            ? (networkNow.tx - this._lastNetwork.tx) / elapsed : 0;
+        let networkPercent = null;
+        let networkCause = null;
+        const candidates = [];
+        for (const [name, iface] of Object.entries(networkNow.interfaces)) {
+            const old = this._lastNetwork.interfaces[name];
+            if (!old || elapsed <= 0)
+                continue;
+            for (const direction of ['rx', 'tx']) {
+                const capacity = iface[`${direction}Capacity`];
+                const current = iface[direction];
+                if (capacity <= 0 || current < old[direction])
+                    continue;
+                const rate = (current - old[direction]) / elapsed;
+                candidates.push({
+                    name,
+                    direction,
+                    rate,
+                    percent: rate * 100 / capacity,
+                });
+            }
+        }
+        candidates.sort((a, b) => b.percent - a.percent);
+        if (candidates.length > 0) {
+            networkCause = candidates[0];
+            networkPercent = networkCause.percent;
+            networkCause.command = networkCause.name;
+            networkCause.rate = this._formatNetworkRate(networkCause.rate);
+        }
+        this._checkThreshold('network', networkPercent, networkCause, now);
+        this._lastNetwork = networkNow;
+        this._lastNetworkTime = now;
+        const networkPercentText = networkPercent === null ? '--%' : `${Math.round(networkPercent)}%`;
+        this._networkValue.text = `↓ ${this._formatNetworkRate(rxRate)}  ↑ ${this._formatNetworkRate(txRate)}  ${networkPercentText}`;
         const frequencyItem = this._intervalMenuItem;
         if (frequencyItem)
             frequencyItem.label.text = _('Update interval: %d s').replace('%d', this._interval);
@@ -434,11 +616,13 @@ class MonitorIndicator extends PanelMenu.Button {
             this._history.cpu.push({ time: now, value: cpuPercent });
         if (memoryPercent !== null)
             this._history.memory.push({ time: now, value: memoryPercent });
-        for (const key of ['cpu', 'memory']) {
+        this._history.network.push({ time: now, rx: rxRate, tx: txRate });
+        for (const key of ['cpu', 'memory', 'network']) {
             this._history[key] = this._history[key].filter(sample => sample.time >= now - HISTORY_SECONDS);
         }
         this._cpuGraph.setSamples(this._history.cpu);
         this._memoryGraph.setSamples(this._history.memory);
+        this._networkGraph.setSamples(this._history.network);
         for (let i = 0; i < 3; i++) {
             const cpu = this._formatProcess(processes.byCpu[i], 'cpu');
             const memory = this._formatProcess(processes.byMemory[i], 'memory');
@@ -454,8 +638,10 @@ class MonitorIndicator extends PanelMenu.Button {
             GLib.Source.remove(this._timer);
             this._timer = 0;
         }
-        this._clickGesture?.cancel();
-        this._rightClickGesture?.cancel();
+        if (this._buttonPressId)
+            this.disconnect(this._buttonPressId);
+        if (this._contextMenu?.isOpen)
+            this._contextMenu.close();
         this._contextMenu?.destroy();
         super.destroy();
     }
@@ -469,6 +655,9 @@ export default class SystemMonitorExtension extends Extension {
             this.metadata.version
         );
         Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
+        // PopupMenu needs its source actor to be parented into the panel
+        // before its BoxPointer can be created or opened.
+        this._indicator._buildContextMenu();
     }
 
     disable() {

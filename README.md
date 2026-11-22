@@ -1,6 +1,8 @@
 # GNOME System Monitor
 
-Displays CPU and memory usage in the right side of the GNOME panel. Left-click the indicator to open compact five-minute graphs and the three processes using the most CPU and memory. Right-click for Settings (update interval from 1 to 10 seconds), About, and Quit. GNOME notifications appear when CPU or memory rises above 50% or 75%, or reaches 100%; each notification names the leading process. Statistics are read from Linux `/proc`.
+Displays CPU and memory usage in the right side of the GNOME panel. Left-click the indicator to open compact five-minute graphs for CPU, memory, and network traffic. The network graph separates download and upload rates. The panel also lists the three processes using the most CPU and memory. Right-click for Settings (update interval from 1 to 10 seconds), About, and Quit.
+
+GNOME notifications appear when CPU or memory usage rises above 50% or 75%, or reaches 100%, and when a network interface exceeds the same percentage of its link capacity. A high level must persist for at least 10 seconds before notification. CPU and memory notifications identify the leading process; network notifications identify the interface, direction, and rate. Wired link capacity comes from the network device; Wi-Fi capacity uses its currently negotiated receive and transmit bitrates when `iw` is available. Statistics are read from Linux `/proc` and `/sys`.
 
 ## Install
 
@@ -26,7 +28,7 @@ English is the default language. Swedish translations are in `po/sv.po` and comp
 Install `dpkg-deb`, `rpmbuild`, and `tar`, then run:
 
 ```sh
-python3 packaging/build-packages.py --version 1.0.1 --output dist
+python3 packaging/build-packages.py --version 1.0.2 --output dist
 ```
 
 Published GitHub releases automatically receive the `.deb`, `.rpm`, extension ZIP, and `SHA256SUMS` assets.
