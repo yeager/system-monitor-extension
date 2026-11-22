@@ -1,0 +1,72 @@
+.system-monitor-menu .system-monitor-content {
+    min-width: 332px;
+    padding: 5px 10px 8px;
+    spacing: 2px;
+}
+
+.system-monitor-heading {
+    spacing: 8px;
+    padding: 3px 0 2px;
+}
+
+.system-monitor-title {
+    font-size: 0.92em;
+    font-weight: 600;
+}
+
+.system-monitor-value {
+    min-width: 38px;
+    font-size: 0.9em;
+    font-weight: 600;
+    text-align: right;
+}
+
+.system-monitor-graph {
+    height: 78px;
+    margin-top: 1px;
+}
+
+.system-monitor-time-axis {
+    spacing: 8px;
+    padding: 0 0 3px;
+}
+
+.system-monitor-time-label {
+    color: rgba(220, 225, 235, 0.48);
+    font-size: 0.72em;
+}
+
+.system-monitor-time-label:last-child {
+    text-align: right;
+}
+
+.system-monitor-processes {
+    min-width: 332px;
+    padding: 6px 10px 7px;
+    spacing: 2px;
+}
+
+.system-monitor-section-title {
+    margin-top: 5px;
+    padding-bottom: 2px;
+    color: rgba(220, 225, 235, 0.68);
+    font-size: 0.78em;
+    font-weight: 700;
+}
+
+.system-monitor-process-row {
+    min-height: 20px;
+    spacing: 12px;
+}
+
+.system-monitor-process-name {
+    font-size: 0.82em;
+}
+
+.system-monitor-process-value {
+    min-width: 52px;
+    color: rgba(220, 225, 235, 0.78);
+    font-size: 0.8em;
+    font-weight: 600;
+    text-align: right;
+}

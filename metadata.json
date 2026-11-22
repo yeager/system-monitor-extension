@@ -1,0 +1,8 @@
+{
+  "uuid": "system-monitor@yeager-v3",
+  "name": "System Monitor",
+  "description": "Monitor CPU and memory usage in the GNOME panel.",
+  "gettext-domain": "system-monitor",
+  "shell-version": ["49", "50", "51"],
+  "version": 4
+}
