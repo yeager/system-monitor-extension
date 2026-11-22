@@ -1,0 +1,56 @@
+name: Build release packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to package
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select release tag
+        id: release
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="$EVENT_TAG"
+          if [ -z "$tag" ]; then tag="$INPUT_TAG"; fi
+          case "$tag" in v*) version="${tag#v}" ;; *) version="$tag" ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - name: Install package build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev rpm gettext gnome-shell-common
+
+      - name: Build DEB and RPM
+        run: python3 packaging/build-packages.py --version '${{ steps.release.outputs.version }}' --output dist
+
+      - name: Package GNOME extension bundle
+        run: gnome-extensions pack --force --gettext-domain=system-monitor --podir=po --out-dir=dist .
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum *.deb *.rpm *.zip > SHA256SUMS
+
+      - name: Attach packages to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" dist/*.deb dist/*.rpm dist/*.zip dist/SHA256SUMS --clobber

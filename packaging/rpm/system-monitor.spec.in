@@ -1,0 +1,29 @@
+Name:           gnome-shell-extension-system-monitor
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        CPU and memory monitor for GNOME Shell
+License:        Unspecified
+BuildArch:      noarch
+Requires:       gnome-shell >= 49
+Source0:        extension.tar.gz
+
+%description
+A GNOME Shell panel extension with CPU and memory graphs, process lists,
+refresh interval controls, Swedish localization, and threshold notifications.
+
+%prep
+%setup -q -n extension
+
+%install
+install -d %{buildroot}%{_datadir}/gnome-shell/extensions/system-monitor@yeager-v3
+install -m 0644 extension.js metadata.json stylesheet.css \
+    %{buildroot}%{_datadir}/gnome-shell/extensions/system-monitor@yeager-v3/
+cp -a locale %{buildroot}%{_datadir}/gnome-shell/extensions/system-monitor@yeager-v3/
+
+%files
+%dir %{_datadir}/gnome-shell/extensions
+%{_datadir}/gnome-shell/extensions/system-monitor@yeager-v3/
+
+%changelog
+* @CHANGELOG_DATE@ Daniel Nylander <po@danielnylander.se> - @VERSION@-1
+- Initial package release
