@@ -12,6 +12,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const HISTORY_SECONDS = 300;
 const HIGH_LOAD_DELAY_SECONDS = 10;
+const ALERT_COOLDOWN_SECONDS = 180;
 const GRAPH_WIDTH = 310;
 const GRAPH_HEIGHT = 78;
 const gettextDomain = Gettext.domain('system-monitor');
@@ -180,9 +181,9 @@ class MonitorIndicator extends PanelMenu.Button {
         this._lastNetworkTime = GLib.get_monotonic_time() / 1_000_000;
         this._menuRows = [];
         this._warningStates = {
-            cpu: { level: 0, since: null, notifiedLevel: 0, process: null },
-            memory: { level: 0, since: null, notifiedLevel: 0, process: null },
-            network: { level: 0, since: null, notifiedLevel: 0, process: null },
+            cpu: { level: 0, since: null, process: null, notifiedAt: {} },
+            memory: { level: 0, since: null, process: null, notifiedAt: {} },
+            network: { level: 0, since: null, process: null, notifiedAt: {} },
         };
 
         this._label = new St.Label({
@@ -517,7 +518,6 @@ class MonitorIndicator extends PanelMenu.Button {
         if (nextLevel === 0) {
             state.level = 0;
             state.since = null;
-            state.notifiedLevel = 0;
             state.process = null;
             return;
         }
@@ -535,11 +535,15 @@ class MonitorIndicator extends PanelMenu.Button {
         }
         state.level = nextLevel;
 
-        if (now - state.since < HIGH_LOAD_DELAY_SECONDS || nextLevel <= state.notifiedLevel)
+        if (now - state.since < HIGH_LOAD_DELAY_SECONDS)
+            return;
+
+        const lastNotifiedAt = state.notifiedAt[nextLevel];
+        if (lastNotifiedAt !== undefined && now - lastNotifiedAt < ALERT_COOLDOWN_SECONDS)
             return;
 
         this._notifyThreshold(kind, nextLevel, percent, state.process);
-        state.notifiedLevel = nextLevel;
+        state.notifiedAt[nextLevel] = now;
     }
 
     _refresh() {
