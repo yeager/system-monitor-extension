@@ -28,7 +28,7 @@ English is the default language. Swedish translations are in `po/sv.po` and comp
 Install `dpkg-deb`, `rpmbuild`, and `tar`, then run:
 
 ```sh
-python3 packaging/build-packages.py --version 1.0.2 --output dist
+python3 packaging/build-packages.py --version 1.0.3 --output dist
 ```
 
 Published GitHub releases automatically receive the `.deb`, `.rpm`, extension ZIP, and `SHA256SUMS` assets.

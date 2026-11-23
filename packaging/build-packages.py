@@ -41,9 +41,9 @@ def build_deb(version, output):
             "Architecture: all\n"
             "Depends: gnome-shell (>= 49)\n"
             "Maintainer: Daniel Nylander <po@danielnylander.se>\n"
-            "Description: CPU and memory monitor for GNOME Shell\n"
+            "Description: CPU, memory, and network monitor for GNOME Shell\n"
             " Compact panel graphs, process lists, Swedish localization,\n"
-            " configurable refresh intervals, and resource threshold alerts.\n"
+            " configurable refresh intervals, and sustained resource alerts.\n"
         )
         target = output / f"{PACKAGE}_{version}-1_all.deb"
         run(["dpkg-deb", "--build", "--root-owner-group", str(root), str(target)])

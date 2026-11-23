@@ -83,17 +83,9 @@ msgstr "Hög processorbelastning"
 msgid "High memory usage"
 msgstr "Hög minnesbelastning"
 
-msgid "CPU usage is above %d%%. Top process: %s (%s%%)."
-msgstr "Processorbelastningen är över %d%%. Mest belastande process: %s (%s%%)."
 
-msgid "CPU usage reached 100%. Top process: %s (%s%%)."
-msgstr "Processorbelastningen nådde 100%%. Mest belastande process: %s (%s%%)."
 
-msgid "Memory usage is above %d%%. Largest process: %s (%s MB)."
-msgstr "Minnesanvändningen är över %d%%. Processen som använder mest: %s (%s MB)."
 
-msgid "Memory usage reached 100%. Largest process: %s (%s MB)."
-msgstr "Minnesanvändningen nådde 100%%. Processen som använder mest: %s (%s MB)."
 
 msgid "Network"
 msgstr "Nätverk"
@@ -101,17 +93,12 @@ msgstr "Nätverk"
 msgid "High network usage"
 msgstr "Hög nätverksbelastning"
 
-msgid "Network usage is above %d%% of link capacity on %s (%s: %s)."
-msgstr "Nätverksbelastningen är över %d%% av länkkapaciteten på %s (%s: %s)."
 
-msgid "Network usage reached 100% of link capacity on %s (%s: %s)."
-msgstr "Nätverksbelastningen nådde 100%% av länkkapaciteten på %s (%s: %s)."
 
-msgid "download"
-msgstr "nedladdning"
 
-msgid "upload"
-msgstr "uppladdning"
 
 msgid "unknown network interface"
 msgstr "okänt nätverksgränssnitt"
+
+msgid "%s · %s · %s"
+msgstr "%s · %s · %s"

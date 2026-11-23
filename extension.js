@@ -489,14 +489,12 @@ class MonitorIndicator extends PanelMenu.Button {
         const name = process?.command ?? _('unknown process');
         const cpu = kind === 'cpu';
         if (kind === 'network') {
-            const direction = process?.direction === 'rx' ? _('download') : _('upload');
+            const direction = process?.direction === 'rx' ? '↓' : '↑';
             const title = _('High network usage');
-            const message = level === 100
-                ? _('Network usage reached 100% of link capacity on %s (%s: %s).')
-                    .replace('%s', name).replace('%s', direction).replace('%s', process?.rate ?? '0')
-                : _('Network usage is above %d%% of link capacity on %s (%s: %s).')
-                    .replace('%d', level).replace('%s', name).replace('%s', direction)
-                    .replace('%s', process?.rate ?? '0');
+            const message = _('%s · %s · %s')
+                .replace('%s', `${level}%`)
+                .replace('%s', name)
+                .replace('%s', `${direction} ${process?.rate ?? '0'}`);
             Main.notify(title, message);
             return;
         }
@@ -504,14 +502,11 @@ class MonitorIndicator extends PanelMenu.Button {
             ? (process?.cpu ?? 0).toFixed(1)
             : ((process?.memory ?? 0) / 1048576).toFixed(0);
         const title = cpu ? _('High CPU usage') : _('High memory usage');
-        const body = level === 100
-            ? (cpu ? _('CPU usage reached 100%. Top process: %s (%s%%).')
-                : _('Memory usage reached 100%. Largest process: %s (%s MB).'))
-            : (cpu ? _('CPU usage is above %d%%. Top process: %s (%s%%).')
-                : _('Memory usage is above %d%%. Largest process: %s (%s MB).'));
-        const message = level === 100
-            ? body.replace('%s', name).replace('%s', processValue)
-            : body.replace('%d', level).replace('%s', name).replace('%s', processValue);
+        const value = cpu ? `${processValue}%` : `${processValue} MB`;
+        const message = _('%s · %s · %s')
+            .replace('%s', `${level}%`)
+            .replace('%s', name)
+            .replace('%s', value);
         Main.notify(title, message);
     }
 

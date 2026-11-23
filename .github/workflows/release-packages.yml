@@ -36,13 +36,13 @@ jobs:
       - name: Install package build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev rpm gettext gnome-shell-common gnome-shell-extensions
+          sudo apt-get install -y dpkg-dev rpm
 
       - name: Build DEB and RPM
         run: python3 packaging/build-packages.py --version '${{ steps.release.outputs.version }}' --output dist
 
       - name: Package GNOME extension bundle
-        run: gnome-extensions pack --force --gettext-domain=system-monitor --podir=po --out-dir=dist .
+        run: python3 packaging/pack-extension.py --output dist
 
       - name: Create checksums
         working-directory: dist

@@ -1,15 +1,15 @@
 Name:           gnome-shell-extension-system-monitor
 Version:        @VERSION@
 Release:        1%{?dist}
-Summary:        CPU and memory monitor for GNOME Shell
+Summary:        CPU, memory, and network monitor for GNOME Shell
 License:        Unspecified
 BuildArch:      noarch
 Requires:       gnome-shell >= 49
 Source0:        extension.tar.gz
 
 %description
-A GNOME Shell panel extension with CPU and memory graphs, process lists,
-refresh interval controls, Swedish localization, and threshold notifications.
+A GNOME Shell panel extension with CPU, memory, and network graphs, process
+lists, Swedish localization, and sustained threshold notifications.
 
 %prep
 %setup -q -n extension
