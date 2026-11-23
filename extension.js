@@ -485,16 +485,20 @@ class MonitorIndicator extends PanelMenu.Button {
         return 0;
     }
 
+    _formatAlert(message, ...values) {
+        return values.reduce((formatted, value) =>
+            formatted.replace('%s', () => String(value)), message);
+    }
+
     _notifyThreshold(kind, level, percent, process) {
         const name = process?.command ?? _('unknown process');
         const cpu = kind === 'cpu';
         if (kind === 'network') {
             const direction = process?.direction === 'rx' ? '↓' : '↑';
             const title = _('High network usage');
-            const message = _('%s · %s · %s')
-                .replace('%s', `${level}%`)
-                .replace('%s', name)
-                .replace('%s', `${direction} ${process?.rate ?? '0'}`);
+            const message = this._formatAlert(
+                _('%s · %s · %s'),
+                `${level}%`, name, `${direction} ${process?.rate ?? '0'}`);
             Main.notify(title, message);
             return;
         }
@@ -503,10 +507,7 @@ class MonitorIndicator extends PanelMenu.Button {
             : ((process?.memory ?? 0) / 1048576).toFixed(0);
         const title = cpu ? _('High CPU usage') : _('High memory usage');
         const value = cpu ? `${processValue}%` : `${processValue} MB`;
-        const message = _('%s · %s · %s')
-            .replace('%s', `${level}%`)
-            .replace('%s', name)
-            .replace('%s', value);
+        const message = this._formatAlert(_('%s · %s · %s'), `${level}%`, name, value);
         Main.notify(title, message);
     }
 
